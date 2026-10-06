@@ -29,6 +29,8 @@ with app.app_context():
 
 # in-memory store for latest jpeg frame per esp_id
 frames = {}
+# tracks last time each esp sent data (alert or frame)
+last_seen = {}
 
 # shows login form and checks credentials on submit
 @app.route('/login', methods=['GET', 'POST'])
@@ -126,7 +128,9 @@ def ack(id):
 @app.route('/alert', methods=['POST'])
 def alert():
     data = request.get_json()
-    sc = Scale.query.filter_by(esp_id=data.get('esp_id')).first()
+    esp_id = data.get('esp_id')
+    last_seen[esp_id] = time.time()  # mark esp as online
+    sc = Scale.query.filter_by(esp_id=esp_id).first()
     if not sc:
         return jsonify({'error': 'unknown esp_id'}), 404
     al = Alert(sc_id=sc.id)
@@ -139,7 +143,16 @@ def alert():
 @app.route('/frame/<esp_id>', methods=['POST'])
 def frame(esp_id):
     frames[esp_id] = request.data
+    last_seen[esp_id] = time.time()  # cam.py posting = esp is online
     return jsonify({'ok': True})
+
+# returns online status for all known esp ids (seen in last 30s = online)
+@app.route('/status')
+@login_required
+def status():
+    now = time.time()
+    result = {eid: (now - t) < 30 for eid, t in last_seen.items()}
+    return jsonify(result)
 
 # streams the latest frame as an mjpeg feed to the browser
 @app.route('/video/<esp_id>')

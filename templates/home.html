@@ -156,6 +156,7 @@
             <th>Scale Name</th>
             <th>Location</th>
             <th>ESP8266 Chip ID</th>
+            <th>Status</th>
             <th>Unacked Alerts</th>
             <th>Action</th>
           </tr>
@@ -166,6 +167,13 @@
             <td class="fw-semibold">{{ sc.name }}</td>
             <td style="color:#8b949e">{{ sc.location }}</td>
             <td><code style="color:#58a6ff; font-size:.8rem">{{ sc.esp_id }}</code></td>
+            <td>
+              <span class="esp-status-dot" id="dot-{{ sc.esp_id }}"
+                    style="display:inline-flex; align-items:center; gap:5px; font-size:.75rem;">
+                <span style="width:8px;height:8px;border-radius:50%;background:#484f58;display:inline-block"></span>
+                <span>Checking…</span>
+              </span>
+            </td>
             <td>
               {% if unacked > 0 %}
                 <span class="pill pill-warn">{{ unacked }} UNACKED</span>
@@ -185,7 +193,7 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="5" class="text-center py-3" style="color:#484f58">No scales added yet. Click + Add Scale to begin.</td></tr>
+          <tr><td colspan="6" class="text-center py-3" style="color:#484f58">No scales added yet. Click + Add Scale to begin.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -259,5 +267,37 @@
   </div>
 </div>
 {% endfor %}
+
+<!-- polls /status every 5s and updates the green/red dot per ESP -->
+<script>
+function pollStatus() {
+  fetch('/status')
+    .then(r => r.json())
+    .then(data => {
+      document.querySelectorAll('.esp-status-dot').forEach(el => {
+        const espId = el.id.replace('dot-', '');
+        const online = data[espId] === true;
+        const dot = el.querySelector('span:first-child');
+        const label = el.querySelector('span:last-child');
+        if (online) {
+          dot.style.background = '#3fb950';  /* green */
+          label.textContent = 'Online';
+          label.style.color = '#3fb950';
+        } else if (data[espId] === false) {
+          dot.style.background = '#f85149';  /* red */
+          label.textContent = 'Offline';
+          label.style.color = '#f85149';
+        } else {
+          dot.style.background = '#484f58';  /* grey - never seen */
+          label.textContent = 'No data';
+          label.style.color = '#8b949e';
+        }
+      });
+    })
+    .catch(() => {});
+}
+pollStatus();
+setInterval(pollStatus, 5000);
+</script>
 
 {% endblock %}
