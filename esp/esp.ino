@@ -1,24 +1,38 @@
 #include <ESP8266WiFi.h>
-#include <WiFiManager.h>
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
 
-// change this to your Render URL before flashing each board
-const char* SERVER = "https://your-app-name.onrender.com";
+// ─── CONFIGURE THESE BEFORE FLASHING ──────────────────────────────────────────
 
-// LDR threshold: above this value = light = casing opened
-// calibrate this per scale (see README)
-#define LIGHT 500
+const char* WIFI_SSID = "your_wifi_name";       // local wifi near the scale
+const char* WIFI_PASS = "your_wifi_password";   // local wifi password
 
-// chip_id is set from hardware at boot - unique for every ESP8266
-String chip_id;
-bool is_open;
+const char* SERVER    = "https://smartscaleguard.onrender.com"; // render url
 
-// posts this ESP's unique chip id to the server as a tamper alert
-// the server matches chip_id to the registered scale in the database
+#define LIGHT 500  // ldr threshold: above this = casing opened (tune after calibration)
+
+// ──────────────────────────────────────────────────────────────────────────────
+
+String chip_id;  // unique id of this esp board, read from hardware
+bool is_open;    // tracks the last known state of the casing
+
+// connects to wifi and waits until connected
+void connect_wifi() {
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println(" Connected!");
+  Serial.println("IP: " + WiFi.localIP().toString());
+}
+
+// posts this esp's chip id to the server when light is detected
+// the server looks up which scale owns this esp id and shows the alert
 void send_alert() {
   WiFiClientSecure client;
-  client.setInsecure();  // skip cert check, acceptable for a college project
+  client.setInsecure();  // skip tls cert check (ok for college project)
   HTTPClient http;
   String url = String(SERVER) + "/alert";
   http.begin(client, url);
@@ -26,7 +40,7 @@ void send_alert() {
   String body = "{\"esp_id\":\"" + chip_id + "\"}";
   int code = http.POST(body);
   http.end();
-  // retry once if the first attempt fails (e.g. temporary network drop)
+  // retry once on network failure
   if (code < 0) {
     delay(500);
     http.begin(client, url);
@@ -38,37 +52,39 @@ void send_alert() {
 
 void setup() {
   Serial.begin(115200);
+  delay(100);
 
-  // WiFiManager: on first boot this ESP opens a hotspot called "SmartScale"
-  // connect your phone to "SmartScale" and enter the local WiFi name + password
-  // the ESP saves the credentials and connects automatically on every boot after that
-  // NO WiFi credentials are hardcoded - each board connects to its own local network
-  WiFiManager wm;
-  wm.autoConnect("SmartScale");
+  // connect to the local wifi using the credentials above
+  connect_wifi();
 
-  // read the unique hardware chip id burned into this ESP8266 at the factory
-  // every board has a different id - copy this from Serial Monitor and paste
-  // it into the dashboard when adding this scale
+  // chip id is burned into the hardware - every esp8266 has a different one
+  // copy this from serial monitor and paste it into dashboard -> add scale -> esp id
   chip_id = String(ESP.getChipId(), HEX);
-  Serial.println("=== SmartScaleGuard ===");
-  Serial.println("ESP Chip ID: " + chip_id);
-  Serial.println("Copy this ID into the dashboard -> Add Scale -> ESP ID field");
-  Serial.println("Server: " + String(SERVER));
+  Serial.println("\n=== SmartScaleGuard ===");
+  Serial.println("ESP Chip ID : " + chip_id);
+  Serial.println("Server      : " + String(SERVER));
+  Serial.println("Register this ESP ID in the dashboard under Add Scale.");
+  Serial.println("=======================");
 
-  // read the LDR now so a board booted in light does not fire a false alert
+  // read ldr once at boot so a board powered on in light does not false-fire
   is_open = analogRead(A0) > LIGHT;
 }
 
 void loop() {
+  // reconnect if wifi drops
+  if (WiFi.status() != WL_CONNECTED) {
+    connect_wifi();
+  }
+
   int val = analogRead(A0);
   bool now_open = (val > LIGHT);
 
-  // only fire when state changes from closed (dark) to open (light)
-  // not on every loop, not when already open - one alert per opening event
+  // fire only when casing changes from closed (dark) to open (light)
   if (now_open && !is_open) {
+    Serial.println("Tamper detected! Sending alert...");
     send_alert();
   }
 
   is_open = now_open;
-  delay(200);  // check every 200 ms
+  delay(200);  // poll ldr every 200 ms
 }
