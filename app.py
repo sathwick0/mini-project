@@ -14,7 +14,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 lm = LoginManager(app)
 lm.login_view = 'login'
-sio = SocketIO(app)
+sio = SocketIO(app, async_mode='threading')  # threading mode for gunicorn
 
 @lm.user_loader
 def load_user(uid):

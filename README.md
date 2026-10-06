@@ -1,79 +1,99 @@
 # SmartScaleGuard
 
-Tamper detection system for weighing scales using ESP8266 + LDR sensor and live webcam feed.
+Tamper detection for weighing scales — ESP8266 + LDR + webcam feed. Flask + Socket.IO.
 
 ---
 
-## Quick Start (Local)
+## Deploy on Render (recommended)
 
-### 1. Install Python 3.11
-Download from https://www.python.org/downloads/ — check **"Add Python to PATH"** during install.
-
-### 2. Install dependencies
+### Step 1 — Push to GitHub
 ```bash
-cd "d:\iomp dashboard"
-pip install -r requirements.txt
+git init
+git add .
+git commit -m "initial"
+git remote add origin https://github.com/<you>/smartscaleguard.git
+git push -u origin main
 ```
 
-### 3. Run the server
+### Step 2 — Create Web Service on Render
+1. Go to https://render.com → New → Web Service
+2. Connect your GitHub repo
+3. Set these values:
+
+| Field | Value |
+|---|---|
+| **Environment** | Python 3 |
+| **Build Command** | `pip install -r requirements.txt` |
+| **Start Command** | `gunicorn -w 1 --threads 100 app:app` |
+
+> The `Procfile` in the repo sets this automatically.
+
+### Step 3 — Set environment variables
+In Render dashboard → Environment → Add:
+
+| Key | Value |
+|---|---|
+| `SECRET_KEY` | any random string (e.g. `xk9f2mq8`) |
+
+> Do NOT set `DB` — SQLite default is fine for a demo.
+
+### Step 4 — Deploy
+Click **Deploy**. Render provides HTTPS automatically.  
+Your URL will be: `https://your-app-name.onrender.com`
+
+### Step 5 — First login
+Open the URL → login with **admin / admin123**  
+(admin account created automatically on first start)
+
+---
+
+## After Deploying — Update ESP and Camera
+
+### ESP8266 (`esp/esp.ino`)
+Change line 6:
+```cpp
+const char* SERVER = "https://your-app-name.onrender.com";
+```
+Reflash the board.
+
+### Camera script (`cam/cam.py`)
 ```bash
+python cam/cam.py https://your-app-name.onrender.com <esp_chip_id>
+```
+
+---
+
+## Run Locally (for testing)
+
+```bash
+pip install -r requirements.txt
 python app.py
 ```
-Opens on http://localhost:5000  
-Login: **admin** / **admin123** (created automatically on first run)
+Open http://localhost:5000 → login: **admin / admin123**
+
+### Test across networks with ngrok
+```bash
+ngrok http 5000
+# paste the https://xxxx.ngrok.io URL into esp.ino SERVER and cam.py arg
+```
 
 ---
 
 ## Test Without Hardware
 
-First add a scale in the dashboard with ESP ID `A1B2C3`, then:
+First add a scale in the dashboard with ESP ID `a1b2c3`, then:
 
 ```bash
 # Fake tamper alert
-curl -X POST http://localhost:5000/alert \
+curl -X POST https://your-app-name.onrender.com/alert \
   -H "Content-Type: application/json" \
-  -d '{"esp_id":"A1B2C3"}'
+  -d '{"esp_id":"a1b2c3"}'
 
-# Fake camera frame (use any .jpg file)
-curl -X POST http://localhost:5000/frame/A1B2C3 \
+# Fake camera frame
+curl -X POST https://your-app-name.onrender.com/frame/a1b2c3 \
   -H "Content-Type: image/jpeg" \
   --data-binary @sample.jpg
 ```
-
----
-
-## Run Camera Script
-
-```bash
-pip install opencv-python requests
-python cam/cam.py http://localhost:5000 A1B2C3
-```
-
----
-
-## Cross-Network Testing (ngrok)
-
-```bash
-ngrok http 5000
-# Use the https://xxxx.ngrok.io URL in:
-#   esp/esp.ino  →  SERVER constant
-#   cam.py arg   →  first argument
-```
-
----
-
-## Deploy on Render
-
-1. Push this repo to GitHub
-2. New Web Service on Render
-   - Build: `pip install -r requirements.txt`
-   - Start: `gunicorn -w 1 --threads 100 app:app`
-3. Set env var `SECRET_KEY` (any random string)
-4. HTTPS is provided automatically by Render
-
-> **Important:** Run with ONE worker only (`-w 1`). The `frames` dict is in RAM and not shared between workers.
-
-> **Free tier note:** Render free tier sleeps after 15 min of inactivity. Running cam.py keeps it awake.
 
 ---
 
@@ -83,32 +103,36 @@ ngrok http 5000
 ```
 3.3V ──── LDR ──── A0 ──── 10kΩ ──── GND
 ```
-Dark (casing closed) = low A0 reading (~0–200)  
-Light (casing open) = high A0 reading (~700–1023)
+- Casing closed (dark) → A0 reads low (~0–200)  
+- Casing open (light) → A0 reads high (~700–1023)
 
-### Arduino Libraries (install via Library Manager)
-- WiFiManager by tzapu
-- ESP8266HTTPClient (bundled with ESP8266 board package)
-- WiFiClientSecure (bundled)
-
-### Before Flashing
-Edit `esp/esp.ino`:
-```cpp
-const char* SERVER = "https://your-app.onrender.com";
-#define LIGHT 500   // adjust after calibration
-```
+### Arduino Libraries needed
+Install via Arduino IDE → Library Manager:
+- **WiFiManager** by tzapu
+- ESP8266HTTPClient and WiFiClientSecure are bundled with the ESP8266 board package
 
 ### First Boot
-1. ESP powers on → opens Wi-Fi portal named **"SmartScale"**
-2. Connect phone to **SmartScale** → enter your Wi-Fi credentials
-3. ESP connects and prints its Chip ID to Serial Monitor (115200 baud)
-4. Copy the Chip ID → add scale in dashboard with that ESP ID
+1. Flash `esp/esp.ino` with correct `SERVER` URL
+2. ESP opens a Wi-Fi portal named **SmartScale**
+3. Connect your phone to **SmartScale** → enter Wi-Fi credentials
+4. ESP prints its Chip ID to Serial Monitor (115200 baud) — copy it
+5. Go to dashboard → **+ Add Scale** → paste Chip ID as ESP ID
 
 ### LDR Calibration
-1. Open Serial Monitor (115200 baud), add `Serial.println(analogRead(A0));` temporarily
-2. Note reading with casing **closed** (expect < 200)
-3. Note reading with casing **open** (expect > 700)
-4. Set `LIGHT` midway between both values, reflash
+1. Open Serial Monitor (115200), read `analogRead(A0)` with casing closed → note value
+2. Read with casing open under room light → note value
+3. Set `#define LIGHT` midway between both, reflash
+
+---
+
+## Important Notes
+
+| Topic | Note |
+|---|---|
+| **One worker only** | `gunicorn -w 1` is required — frames live in RAM and are not shared between workers |
+| **Free tier sleep** | Render free tier sleeps after 15 min of no traffic. Cold start takes ~30 s. Use cam.py to keep it awake. |
+| **SQLite resets** | On Render, the disk resets on each redeploy. Alerts are lost. For permanent storage, set `DB` env var to a PostgreSQL URL from Render's database add-on. |
+| **No auth on ESP endpoints** | `/alert` and `/frame` are public. Anyone knowing an ESP ID can post. Acceptable for a college mini project. |
 
 ---
 
@@ -116,20 +140,15 @@ const char* SERVER = "https://your-app.onrender.com";
 
 ```
 smartscaleguard/
-  app.py            # all Flask routes + Socket.IO
-  models.py         # User, Scale, Alert models
-  requirements.txt  # server dependencies
+  app.py              # all Flask routes + Socket.IO
+  models.py           # User, Scale, Alert models
+  requirements.txt    # server pip packages
+  Procfile            # Render/gunicorn start command
   templates/
-    base.html       # navbar, flash messages, socket.io JS
-    login.html      # admin login
-    home.html       # scale cards + add/edit/delete
-    view.html       # live video + alert history
-  esp/esp.ino       # ESP8266 Arduino sketch
-  cam/cam.py        # webcam → JPEG poster
+    base.html         # navbar, dark CSS, socket.io JS
+    login.html        # admin login
+    home.html         # main dashboard
+    view.html         # per-scale detail + alerts
+  esp/esp.ino         # ESP8266 Arduino sketch
+  cam/cam.py          # webcam JPEG poster
 ```
-
----
-
-## Known Limitation
-
-`/alert` and `/frame` endpoints have no authentication. Anyone who knows an ESP ID can post to them. Acceptable for a college mini project.
