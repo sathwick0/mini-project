@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <title>SmartScaleGuard</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <style>
+    body { background: #0d1117; color: #c9d1d9; }
+    .top-nav { background: #161b22; border-bottom: 1px solid #30363d; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+    .card-header { background: transparent; border-bottom: 1px solid #30363d; font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: #8b949e; }
+    .stat-label { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: #8b949e; }
+    .stat-val { font-size: 1.5rem; font-weight: 700; color: #e6edf3; }
+    .pill { display:inline-block; font-size:.68rem; padding:2px 10px; border-radius:20px; border:1px solid; font-weight:600; letter-spacing:.05em; }
+    .pill-ok  { color:#3fb950; border-color:#3fb950; }
+    .pill-warn{ color:#f85149; border-color:#f85149; }
+    .pill-idle{ color:#8b949e; border-color:#30363d; }
+    .table { --bs-table-bg: transparent; }
+    .table th { font-size:.7rem; letter-spacing:.08em; text-transform:uppercase; color:#8b949e; border-color:#30363d; }
+    .table td { border-color:#21262d; font-size:.875rem; vertical-align:middle; }
+    .table tbody tr:hover { background:#1f2937; }
+    .cctv-box { background:#0d1117; border-radius:6px; min-height:240px; display:flex; align-items:center; justify-content:center; flex-direction:column; }
+    .section-title { font-size:.75rem; letter-spacing:.1em; text-transform:uppercase; color:#8b949e; margin-bottom:.5rem; }
+    .alert-row-unacked { background:#1a0a0a !important; }
+    input.form-control, select.form-select { background:#0d1117; border-color:#30363d; color:#c9d1d9; }
+    input.form-control:focus, select.form-select:focus { background:#0d1117; border-color:#58a6ff; color:#c9d1d9; box-shadow:none; }
+    .btn-primary { background:#238636; border-color:#2ea043; }
+    .btn-primary:hover { background:#2ea043; }
+  </style>
+</head>
+<body>
+
+<!-- top navbar -->
+<nav class="top-nav px-4 py-2 d-flex align-items-center justify-content-between">
+  <div>
+    <span style="font-size:1.05rem; font-weight:700; color:#e6edf3;">🛡 SmartScaleGuard</span>
+    <span class="ms-2" style="font-size:.7rem; color:#8b949e;">Remote IoT &amp; CCTV Weighing Scale Tamper Detection</span>
+  </div>
+  {% if current_user.is_authenticated %}
+  <div class="d-flex align-items-center gap-2">
+    {% block nav_extra %}{% endblock %}
+    <a class="btn btn-sm btn-outline-secondary" href="/logout">Logout</a>
+  </div>
+  {% endif %}
+</nav>
+
+<!-- flash messages -->
+<div class="px-4 mt-2">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ 'danger' if cat == 'error' else 'success' }} alert-dismissible fade show py-2" role="alert">
+        {{ msg }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endwith %}
+</div>
+
+<!-- tamper alert banner -->
+<div id="alert-banner" class="alert alert-danger alert-dismissible fade d-none mx-4 mt-2" role="alert">
+  <strong>⚠ Tamper Detected:</strong> <span id="alert-name"></span>
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+
+{% block body %}{% endblock %}
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+  // connect to the socket.io server
+  const socket = io();
+
+  // when alert fires: play a beep, show a banner, reload the page
+  socket.on('alert', function(data) {
+    // use audiocontext to make the beep sound without any audio file
+    try {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      osc.connect(ctx.destination);
+      osc.frequency.value = 880;
+      osc.start();
+      osc.stop(ctx.currentTime + 0.3);
+    } catch(e) {}
+    const banner = document.getElementById('alert-banner');
+    document.getElementById('alert-name').textContent = data.name;
+    banner.classList.remove('d-none', 'show');
+    void banner.offsetWidth;
+    banner.classList.add('show');
+    setTimeout(() => location.reload(), 1500);
+  });
+</script>
+</body>
+</html>
